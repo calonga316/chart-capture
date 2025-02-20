@@ -1,198 +1,56 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Camera, AlertCircle } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chart Capture</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <div id="auto-capture-root"></div>
+    <div id="chart-container"></div>
 
-const AutoChartCapture = () => {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [brightness, setBrightness] = useState(0);
-  const [trend, setTrend] = useState('neutral');
-  const [errorMsg, setErrorMsg] = useState('');
-  const THRESHOLD = 127; // Umbral de brillo medio
-  const processingTimeoutRef = useRef(null);
-  const lastBrightnessValues = useRef([]);
+    <script type="text/babel">
+        // Aquí va el componente AutoChartCapture
+        const AutoChartCapture = ${document.getElementById('document_content_1').textContent}
 
-  const startCapture = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } 
-      });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCapturing(true);
-        setErrorMsg('');
-      }
-    } catch (err) {
-      setErrorMsg('Error al acceder a la cámara: ' + err.message);
-      console.error('Error accessing camera:', err);
-    }
-  };
+        // Renderizar el componente
+        const root = ReactDOM.createRoot(document.getElementById('auto-capture-root'));
+        root.render(<AutoChartCapture />);
+    </script>
 
-  const stopCapture = () => {
-    if (videoRef.current?.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
-      setIsCapturing(false);
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-      }
-    }
-  };
-
-  const calculateRegionBrightness = (context, startX, startY, width, height) => {
-    const imageData = context.getImageData(startX, startY, width, height);
-    const data = imageData.data;
-    let brightness = 0;
-    
-    // Calcular el brillo promedio de la región
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      // Fórmula de luminancia percibida
-      brightness += (0.299 * r + 0.587 * g + 0.114 * b);
-    }
-    
-    return brightness / (width * height);
-  };
-
-  const detectChanges = (newBrightness) => {
-    lastBrightnessValues.current.push(newBrightness);
-    if (lastBrightnessValues.current.length > 5) {
-      lastBrightnessValues.current.shift();
-    }
-
-    const avg = lastBrightnessValues.current.reduce((a, b) => a + b, 0) / lastBrightnessValues.current.length;
-    
-    if (Math.abs(newBrightness - avg) > 10) {
-      if (newBrightness > THRESHOLD) {
-        setTrend('up');
-        if (window.increasePrice) window.increasePrice();
-      } else {
-        setTrend('down');
-        if (window.decreasePrice) window.decreasePrice();
-      }
-    }
-  };
-
-  const processFrame = () => {
-    if (!isCapturing || !videoRef.current || !canvasRef.current || isProcessing) return;
-
-    try {
-      setIsProcessing(true);
-      const context = canvasRef.current.getContext('2d');
-      const { videoWidth, videoHeight } = videoRef.current;
-      
-      // Ajustar el tamaño del canvas al video
-      canvasRef.current.width = videoWidth;
-      canvasRef.current.height = videoHeight;
-      
-      // Dibujar el frame actual
-      context.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
-      
-      // Analizar región central (ajusta estos valores según necesites)
-      const regionWidth = Math.floor(videoWidth * 0.3);
-      const regionHeight = Math.floor(videoHeight * 0.3);
-      const startX = Math.floor((videoWidth - regionWidth) / 2);
-      const startY = Math.floor((videoHeight - regionHeight) / 2);
-      
-      const currentBrightness = calculateRegionBrightness(
-        context, 
-        startX, 
-        startY, 
-        regionWidth, 
-        regionHeight
-      );
-      
-      setBrightness(currentBrightness);
-      detectChanges(currentBrightness);
-
-      setIsProcessing(false);
-      
-      // Programar el siguiente procesamiento
-      if (isCapturing) {
-        processingTimeoutRef.current = setTimeout(processFrame, 200);
-      }
-    } catch (err) {
-      console.error('Error processing frame:', err);
-      setIsProcessing(false);
-      setErrorMsg('Error al procesar imagen: ' + err.message);
-    }
-  };
-
-  useEffect(() => {
-    if (isCapturing && !isProcessing) {
-      processFrame();
-    }
-    
-    return () => {
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-      }
-    };
-  }, [isCapturing, isProcessing]);
-
-  return (
-    <div className="fixed top-4 right-4 p-4 bg-gray-900 rounded-lg shadow-lg z-50">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <button 
-            onClick={isCapturing ? stopCapture : startCapture}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            <Camera className="w-5 h-5 mr-2" />
-            {isCapturing ? 'Detener' : 'Iniciar'} Captura
-          </button>
-          <div className="text-white ml-4 flex flex-col">
-            <span className="text-lg font-bold">
-              {trend === 'up' ? '↑' : trend === 'down' ? '↓' : '–'}
-            </span>
-            <span className={`text-sm ${
-              trend === 'up' ? 'text-green-400' : 
-              trend === 'down' ? 'text-red-400' : 
-              'text-gray-400'
-            }`}>
-              {trend === 'up' ? 'Subiendo' : 
-               trend === 'down' ? 'Bajando' : 
-               'Neutral'}
-            </span>
-          </div>
-        </div>
-        
-        {errorMsg && (
-          <div className="flex items-center text-red-500 text-sm bg-red-100 p-2 rounded">
-            <AlertCircle className="w-4 h-4 mr-2" />
-            {errorMsg}
-          </div>
-        )}
-
-        <div className="relative w-64 h-48 bg-black rounded-lg overflow-hidden">
-          <video 
-            ref={videoRef}
-            autoPlay 
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-          <canvas 
-            ref={canvasRef}
-            className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-50"
-          />
-          <div className="absolute inset-0 border-2 border-white opacity-50 m-auto w-1/3 h-1/3 pointer-events-none" />
-          <div className="absolute bottom-2 left-2 right-2 bg-black bg-opacity-50 text-white text-xs p-2 rounded flex justify-between items-center">
-            <span>Región de captura</span>
-            {isProcessing && <span className="text-yellow-400">Procesando...</span>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default AutoChartCapture;
+    <script>
+        // Aquí va el código del gráfico original
+        let countdownInterval;
+        let totalTime = 80;
+        let totalTimeBox2 = 100;
+        let timeRemaining = 0;
+        let showingCountdown = false;
+        const ctx = document.getElementById('chart-container').getContext('2d');
+        const MAX_POINTS = 20;
+        let lastClose = 100;
+        let initialPrice = lastClose;
+        let lastDateTime = new Date();
+        let activeMarkers = [];
+        let priceHistory = [];
+        let timeLabels = [];
+        let pointColors = [];
+        let priceMovements = [];
+        // ... resto del código del gráfico ...
+    </script>
+</body>
+</html>
