@@ -1,56 +1,238 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chart Capture</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>IQ Option Style Chart</title>
+    
+    <!-- Librerías necesarias -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    
     <style>
         body {
             margin: 0;
-            padding: 0;
-            background: #ffffff;
+            padding: 10px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 500px;
+            background: #242424;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            margin: 20px auto;
+            background: #242424;
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .camera-preview {
+            width: 100%;
+            height: 200px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background: rgba(0,0,0,0.2);
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #capture-canvas {
+            display: none;
         }
     </style>
 </head>
 <body>
-    <div id="auto-capture-root"></div>
-    <div id="chart-container"></div>
+    <!-- Contenedor del gráfico -->
+    <div class="chart-container">
+        <canvas id="myChart"></canvas>
+    </div>
 
-    <script type="text/babel">
-        // Aquí va el componente AutoChartCapture
-        const AutoChartCapture = ${document.getElementById('document_content_1').textContent}
+    <!-- Contenedor de la cámara -->
+    <div class="camera-container">
+        <div class="camera-preview">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="capture-canvas"></canvas>
+        </div>
+        <button id="startButton">Iniciar Captura</button>
+        <div id="status" class="status">Estado: Esperando inicio</div>
+    </div>
 
-        // Renderizar el componente
-        const root = ReactDOM.createRoot(document.getElementById('auto-capture-root'));
-        root.render(<AutoChartCapture />);
-    </script>
+<script>
+// Configuración inicial del gráfico
+const ctx = document.getElementById('myChart').getContext('2d');
+let lastClose = 100;
+let priceHistory = [lastClose];
+let timeLabels = [new Date().toLocaleTimeString()];
 
-    <script>
-        // Aquí va el código del gráfico original
-        let countdownInterval;
-        let totalTime = 80;
-        let totalTimeBox2 = 100;
-        let timeRemaining = 0;
-        let showingCountdown = false;
-        const ctx = document.getElementById('chart-container').getContext('2d');
-        const MAX_POINTS = 20;
-        let lastClose = 100;
-        let initialPrice = lastClose;
-        let lastDateTime = new Date();
-        let activeMarkers = [];
-        let priceHistory = [];
-        let timeLabels = [];
-        let pointColors = [];
-        let priceMovements = [];
-        // ... resto del código del gráfico ...
-    </script>
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: timeLabels,
+        datasets: [{
+            label: 'Precio',
+            data: priceHistory,
+            borderColor: '#4CAF50',
+            borderWidth: 2,
+            fill: false
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: false
+            }
+        }
+    }
+});
+
+// Funciones para actualizar el gráfico
+function addData(price) {
+    if (priceHistory.length > 20) {
+        priceHistory.shift();
+        timeLabels.shift();
+    }
+    
+    const now = new Date().toLocaleTimeString();
+    priceHistory.push(price);
+    timeLabels.push(now);
+    
+    chart.update();
+}
+
+function increasePrice() {
+    lastClose += 1;
+    addData(lastClose);
+}
+
+function decreasePrice() {
+    lastClose -= 1;
+    addData(lastClose);
+}
+
+// Configuración de la cámara y captura
+const video = document.getElementById('video');
+const canvas = document.getElementById('capture-canvas');
+const ctx2 = canvas.getContext('2d');
+const startButton = document.getElementById('startButton');
+const statusDiv = document.getElementById('status');
+let isCapturing = false;
+let captureInterval;
+
+// Función para iniciar/detener la captura
+startButton.onclick = async () => {
+    if (!isCapturing) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            });
+            video.srcObject = stream;
+            isCapturing = true;
+            startButton.textContent = 'Detener Captura';
+            statusDiv.textContent = 'Estado: Capturando';
+            startCapture();
+        } catch (err) {
+            statusDiv.textContent = 'Error: ' + err.message;
+        }
+    } else {
+        const stream = video.srcObject;
+        const tracks = stream.getTracks();
+        tracks.forEach(track => track.stop());
+        video.srcObject = null;
+        isCapturing = false;
+        startButton.textContent = 'Iniciar Captura';
+        statusDiv.textContent = 'Estado: Detenido';
+        if (captureInterval) {
+            clearInterval(captureInterval);
+        }
+    }
+};
+
+// Función para procesar cada frame
+function processFrame() {
+    if (!isCapturing) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx2.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Analizar región central
+    const centerX = Math.floor(canvas.width / 2);
+    const centerY = Math.floor(canvas.height / 2);
+    const regionSize = 50;
+    
+    const imageData = ctx2.getImageData(
+        centerX - regionSize/2,
+        centerY - regionSize/2,
+        regionSize,
+        regionSize
+    );
+    
+    // Calcular brillo promedio
+    let brightness = 0;
+    for (let i = 0; i < imageData.data.length; i += 4) {
+        brightness += (imageData.data[i] + imageData.data[i+1] + imageData.data[i+2]) / 3;
+    }
+    brightness = brightness / (regionSize * regionSize);
+
+    // Actualizar gráfico basado en brillo
+    if (brightness > 127) {
+        increasePrice();
+        statusDiv.textContent = 'Estado: Detectado cambio ↑';
+    } else {
+        decreasePrice();
+        statusDiv.textContent = 'Estado: Detectado cambio ↓';
+    }
+}
+
+function startCapture() {
+    captureInterval = setInterval(processFrame, 500);
+}
+</script>
+
 </body>
 </html>
+    
